@@ -1,0 +1,523 @@
+---
+title: 'STATS 199: Chyron Text Analysis'
+author: "Aida Ylanan"
+date: "3/16/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```  
+
+## Introduction  
+<br />
+Cable news is part and parcel of everyday life in America. It's how many Americans stay connected to the world and, more often, how they stay in touch with each other. Finding out what's happening on the other side of the country requires no more than turning a television on. An important and instantly recognizable feature of cable news are  **chyrons**, the giant text at the bottom of the screen that summarizes the news story in discussion. Chyrons are really important, because the immense amount of information networks have to convey, coupled with the ridiculously small amount of word space networks have to convey it,  makes chyron word choice really important for news reporters. Chyrons also reveal a lot about what stories networks choose to cover, and statistical analysis as simple as word count can reveal a lot about what news gets prioritized among different cable networks.  
+Last month's news cycles were tumultuous ones. American cable news networks were dominated by coverage of the [Parkland Shooting](https://en.wikipedia.org/wiki/Stoneman_Douglas_High_School_shooting), a tragic and violent high school shooting that occurred on Valentine's Day and resulted in the deaths of seventeen people. The tragedy sparked a fierce debate around gun control that still continues to this day. Coverage of the Parkland Shooting interrupted news networks' usual focus on political news, especially those stories related to Russian interference in the 2016 presidential election. While all networks covered the Parkland Shooting, news networks often differ on the political news they choose to report.   
+Statistical programming languages like R allow us to make new analyses of data in many forms, including the kind we see in news chyrons. With this tool, we're given a macroscopic view of how networks cover the news, and this vantage point can show us perspectives of the news that might be hard to detect, say, watching programs individually. We can detect the most frequently occuring terms in news chyrons, or we can see how coverage of a certain event might change over time. Analyses of this kind require thousands of observations, made available through fantastic data sources that can be easily found online. Considering our earlier discussion about cable news, we can start asking questions about events we experienced in real-time: How did networks cover the Parkland Shooting? What were networks talking about before the shooting, and how did their cycles change after the tragedy? Before we can start exploring answers to those questions, we have to start at another crucial aspect of data analytic projects: data preparation.   
+   <br />
+   
+Notes:  
+* *This analysis takes a lot of inspiration from a report written by [The Pudding](https://pudding.cool/2018/01/chyrons/) that compares the different ways CNN, MSNBC and Fox cover the news.*  
+* *A caveat before we begin: this objective of this analysis has no particular ideological point to make. This analysis, imperfect as it is, is only meant to explore how statistical techniques can be used to see the news differently than we would, say, only watching it.*  
+  
+---    
+  <br />
+  <br />
+    
+## Preparations  
+  
+### Data Source  
+The chyron data comes from archive.org's [Third Eye project](https://archive.org/details/third-eye), which applies OCR to the text that runs at the bottom of the screen during cable news shows. The data includes chyrons from [CNN](https://www.cnn.com/), [MSNBC](http://www.msnbc.com/), [FOX](http://www.foxnews.com/), and [BBC](http://www.bbc.com/). Along with the text from the chyron, the dataset provides the date and time (UTC) during which the chyron appeared on screen, the channel, the number of seconds the chyron appeared on screen, and a link for more details on the observation. 
+Because the Parkland Shooting happened on February 14, 2018, I pulled data starting from two weeks before the shooting and two weeks after.
+Data is pulled from online and saved as text files. We can read these in using readr's `read_tsv` function: 
+```{r message = FALSE, warning=FALSE}
+library(readr)
+library(dplyr)
+chy1 <- read_tsv("~/Documents/Stats_199/corpus/parkland1_3.txt")  # each file = 7 days of chyrons
+chy2 <- read_tsv("~/Documents/Stats_199/corpus/parkland2_3.txt")  # chy1-3: 0-2 weeks after
+chy3 <- read_tsv("~/Documents/Stats_199/corpus/parkland3_3.txt")
+chy_pre1 <- read_tsv("~/Documents/Stats_199/corpus/pre14_1.txt")  # chy_pre1-2: 1-2 weeks before 
+chy_pre2 <- read_tsv("~/Documents/Stats_199/corpus/pre14_2.txt")
+
+chy <- rbind(chy_pre2, chy_pre1, chy1, chy2, chy3)
+```  
+  
+  
+OCR text doesn't always produce the clearest results. Many, many words get misread, and some of the text that's recorded doesn't come from a cable news chyron at all. The two observations below, for example, show some of the strange inconsistencies of OCR text data:  
+```{r message = FALSE, warning=FALSE}
+chy[38225:38226, 5] 
+```  
+It quickly becomes clear that a big challenge of this project comes from cleaning up the text itself. 
+  
+  
+  
+### Data Preparation 
+<br />
+  
+#### Text Clean-Up 
+**Remove commercials:** First, I wanted to make sure that the text being analyzed actually came from cable news chyrons. To do this, I filtered out the observations that would have the kind of text usually seen in commercials (phone numbers, websites, drug advertisements advising you to "Call Your Doctor", etc.) using regex and base subsetting:
+```{r message = FALSE, warning=FALSE}
+# remove websites/phone numbers/other unwanted observations
+unwanted <- "800|8OO|888|[[:digit:]]{3}-[[:digit:]]{3}-[[:digit:]]{4}|[[:alnum:]]{3}-[[:alnum:]]{3}-[[:alnum:]]{4}|1-[[:alnum:]]{3}-[[:alnum:]]{3}-[[:alnum:]]{4}|1-[[:digit:]]{3}-[A-Za-z]{0-10}|1-[[:digit:]]{3}-[[:digit:]]{3}-[[:digit:]]{4}|1-[[:alnum:]]{3}-[[:alnum:]]{0,10}|1-[[:alnum:]]{3}-[[:alnum:]]{3}-[[:alnum:]]{0,10}|[Cc][Aa][Ll][Ll]\\s[Yy][Oo][Uu][Rr]\\s[Dd][Oo][Cc][Tt][Oo][Rr]\\w*|[Oo][Ff][Ff][Ee][Rr]|[Dd][Ee][Aa][Ll]\\w*|\\.[Cc][Oo][Mm]|[Ww][Ww][Ww]|[Ww][Ww][Ww]\\.|[Pp][Rr][Ee][Ss][Cc][Rr][Ii][Pp][Tt][Ii][Oo][Nn]|[Uu][Ss][Ee]\\s[Aa][Ss]\\s[Dd][Ii][Rr][Ee][Cc][Tt][Ee][Dd]"
+
+chy <- chy[!grepl(unwanted, chy$text), ]
+```  
+  
+  <br />
+**Remove unwanted punctuation:** There were other parts of the text that did not add any information to the chyron, like punctuation and unicode numbers. I took out commonly-appearing symbols so we focus on analyzing words:
+```{r message = FALSE, warning=FALSE}
+library(stringr)
+
+# remove \n or \\n
+new_line <- c("\\n", "\\\\n")
+chy$text <- str_replace_all(chy$text, paste(new_line, collapse = "|"), " ")
+
+# remove quotation marks
+quote <- c("\'", "\"")
+chy$text <- str_replace_all(chy$text, paste(quote, collapse = "|"), "")
+
+# remove other punctuation
+punct <- c("\\.", "/", "\\\\", ":", ",", "|", "\\(", "\\)", "\\?", ">", "<", "-", "_", "u2014", "u2019")
+chy$text <- str_replace_all(chy$text, paste(punct, collapse = "|"), "")
+```  
+  
+  <br />
+**Spellcheck:** Skimming through `chy$text`, I noticed some common spelling mistakes made by OCR when scanning television chyrons. I noted some of the common variations I saw and fixed these with stringr's string replacement functions. Spellchecking as best I can was important to the analysis, because word tallying functions often count the misspelled versions of a word as different words altogether. The same goes for abbreviated words, which I sought to replace with the longer word in order to make spelling more consistent across chyrons:
+```{r message = FALSE, warning=FALSE}
+# variations of misspelled/abbreviated words
+florida <- c("\\b[Oo][Rr][Ii][Dd][Aa]\\b", "\\b[Ll][Oo][Rr][Ii][Dd][Aa]\\b", "\\b[Ff][Ll]\\b")
+mass <- c("\\b[Aa][Ss][Ss]\\b", "\\b[Xx][Aa][Ss][Ss]\\b", "\\b\\.[A][Ss][Ss]\\b")
+president <- c("\\b\\{[Ee][Ss][Ii][Dd][Ee][Nn][Tt]\\b", "\\b[Pp][Rr][Ee][Ss]\\.\\b", "\\b[Pp][Rr][Ee][Ss]\\b", "\\b[Ee][Ss][Ii][Dd][Ee][Nn][Tt]\\b")
+democrats <- c("\\b[Dd][Ee][Mm][Ss]\\b", "\\b[Dd][Ee][Mm][Oo][Cc][Rr][Aa][Tt][Ss]\\b", "\\b[Dd][Ee][Mm]\\b")
+republicans <- c("\\b[Rr][Ee][Pp][Uu][Bb][Ll][Ii][Cc][Aa][Nn][Ss][Ss]\\b")
+senator <- c("\\b[Ss][Ee][Nn][Aa][Tt][Oo][Rr]\\w*\\b", "\\b[Ss][Ee][Nn]\\.\\b", "\\b[Ss][Ee][Nn]\\b")
+representative <- c("\\b[Rr][Ee][Pp]\\.\\b", "\\b[Rr][Ee][Pp]\\b", "\\b[Rr][Ee][Pp][Rr][Ee][Ss][Ee][Nn][Tt][Aa][Tt][Ii][Vv][Ee]\\w*\\b") 
+nyt <- c("\\b[Nn][Yy] [Tt][Ii][Mm][Ee][Ss]\\b")
+shooter <- c("\\b[Oo][Oo][Tt][Ee][Rr]\\b")
+sheriff <- c("\\b1[Ee][Rr][Ii][Ff][Ff]\\b")
+update <- c("\\b[Pp][Dd][Aa][Tt][Ee]\\b")
+obama <- c("\\b[Bb][Aa][Mm][Aa]\\b")
+merkel <- c("\\b[Mm][Ee][Hh][Kk][Ee][Ll]\\b")
+trump <- c("\\b[Uu][Mm][Pp]\\b", "\\b[Rr][Uu][Mm][Pp]\\b", "\\b\\{[Uu][Mm][Pp]\\b")
+
+
+# spell check
+chy$text <- str_replace_all(chy$text, paste(florida, collapse = "|"), "FLORIDA")
+chy$text <- str_replace_all(chy$text, paste(mass, collapse = "|"), "MASS")
+chy$text <- str_replace_all(chy$text, paste(president, collapse = "|"), "PRESIDENT")
+chy$text <- str_replace_all(chy$text, paste(democrats, collapse = "|"), "DEMOCRATS")
+chy$text <- str_replace_all(chy$text, paste(senator, collapse = "|"), "SENATOR")
+chy$text <- str_replace_all(chy$text, paste(representative, collapse = "|"), "REPRESENTATIVE")
+chy$text <- str_replace_all(chy$text, paste(trump, collapse = "|"), "TRUMP")
+
+chy$text <- str_replace_all(chy$text, nyt, "NYT")
+chy$text <- str_replace_all(chy$text, republicans, "REPUBLICANS")  
+chy$text <- str_replace_all(chy$text, shooter, "SHOOTER")
+chy$text <- str_replace_all(chy$text, sheriff, "SHERIFF")
+chy$text <- str_replace_all(chy$text, update, "UPDATE")
+chy$text <- str_replace_all(chy$text, obama, "OBAMA")
+chy$text <- str_replace_all(chy$text, merkel, "MERKEL")
+
+```  
+  
+  <br />
+  
+#### Subsetting
+**News Networks:** One of the most interesting comparisons to make when analyzing television is making comparisons across cable news networks. This was easily done by subsetting along the `chy$channel` column. For some reason, there were no BBC chyrons before Feb 1, 2018, so I had to remove those earlier observations as well:
+```{r message = FALSE, warning=FALSE}
+cnn <- chy[chy$channel == "CNNW", ]
+
+msnbc <- chy[chy$channel == "MSNBCW", ]
+
+fox <- chy[chy$channel == "FOXNEWSW", ]
+
+# no BBC chyrons before 2018-02-01 19:35:00 (observation 8028)
+bbc <- chy[chy$channel == "BBCNEWS", ]
+bbc <- bbc[8028:nrow(bbc), ]
+```  
+  
+  <br />
+**Remove Duplicates:** The presence of duplicate chyrons in the dataset was another problem. While each observation technically features a chyron with different text, the headline being reported is often the same between rows. This is because slight changes in the chyron, like those that briefly change to announce the name and position of a guest commentator, get recorded as new observations altogether. Duplicates are a problem for analysis because term count gets unintentionally inflated by headlines with chyrons that change slightly but frequently. 
+Since duplicate chyrons, though similar, have different texts per observation, I couldn't use `unique()` and had to develop something similar. I opted to write a function that looks at the first three words of an observation to see if the chyrons are talking about the same headline:  
+```{r message = FALSE, warning=FALSE}
+# create function to remove duplicates 
+duplicates <- function(x){
+  repeats <- c()
+  for(i in 1:(nrow(x) - 1)){
+    first_three <- unlist(strsplit(x[[i,5]], split = "\\s+"))[1:3]
+    second_three <- unlist(strsplit(x[[i + 1,5]], split = "\\s+"))[1:3]
+    check <- all.equal(first_three, second_three)
+    if(check == TRUE){
+      repeats <- c(repeats, i)
+      next
+    }
+    if(check == FALSE){
+     next
+    }
+  }
+  return(repeats)
+}
+
+
+# remove duplicate chyrons
+a <- duplicates(cnn)
+cnn <- cnn[-a, ]
+
+b <- duplicates(msnbc)
+msnbc <- msnbc[-b, ]
+
+c <- duplicates(fox)
+fox <- fox[-c,]
+
+d <- duplicates(bbc)
+bbc <- bbc[-d, ]
+```  
+  
+  <br />
+Here's the number of observations we have after modifying and subsetting. We can see that, because of the incomplete OCR data, there are a lot less observations for BBC than there are for the rest of the cable news networks. It's also worth mentioning that the data clean-up was not perfect, and that some observations with incomprehensible text still remain. The numbers listed below are therefore higher than the actual count of legible chyrons.
+```{r message = FALSE, warning=FALSE}
+data.frame(channel = c("cnn", "msnbc", "fox", "bbc"), count = c(nrow(cnn), nrow(msnbc), nrow(fox), nrow(bbc)))
+```  
+  
+  <br />
+  
+### Buildling corpora
+  <br />
+    
+#### Create Corpora by Channel and for All    
+Now that our data is in a better format than before, we can start shaping the data in a way that allows for meaningful textual analysis. To do this, we'll use a package called Quanteda, which can shape text into corpora:
+```{r message = FALSE, warning=FALSE}
+library(quanteda)
+
+# by channel
+cnn_corpus <- paste(cnn$text, collapse = " ") %>% corpus()
+
+msnbc_corpus <- paste(msnbc$text, collapse = " ") %>% corpus()
+
+fox_corpus <- paste(fox$text, collapse = " ") %>% corpus()
+
+bbc_corpus <- paste(bbc$text, collapse = " ") %>% corpus()
+
+
+# for all
+all <- c(paste(cnn$text, collapse = " "), paste(msnbc$text, collapse = " "), paste(fox$text, collapse = " "), paste(bbc$text, collapse = " ")) %>% corpus()
+docnames(all) <- c("CNN", "MSNBC", "FOX", "BBC")
+docvars(all, "channel") <- c("CNN", "MSNBC", "FOX", "BBC")
+```  
+  <br />
+  
+#### Create DFM's by Channel and for All  
+Once formatted into corpora, Quanteda can use these texts to create document-feature matrices (DFM), which count the amount of times a certain word appears in a text. I went ahead and also removed stop words and other words or symbols that didn't add any meaningful information to the chyron. I also used the function `topfeatures()`, which sorts DFM's by the most frequently occurring words. 
+```{r message = FALSE, warning=FALSE}
+library(data.table)
+
+# by channel
+cnn_dfm <- dfm(cnn_corpus, remove = stopwords("english"), remove_punct = TRUE)
+cnn_tf <- topfeatures(cnn_dfm, 10) %>% as.data.frame() %>% setDT(., keep.rownames = TRUE)
+colnames(cnn_tf) <- c("word", "count")
+
+msnbc_dfm <- dfm(msnbc_corpus, remove = c(stopwords("english"), "|"), remove_punct = TRUE)
+msnbc_tf <- topfeatures(msnbc_dfm, 10) %>% as.data.frame() %>% setDT(., keep.rownames = TRUE)
+colnames(msnbc_tf) <- c("word", "count")
+
+fox_dfm <- dfm(fox_corpus, remove = c(stopwords("english"), "u2014", "|", "l", "m", "{", "n", "&", "s", "-"), remove_punct = TRUE)
+fox_tf <- topfeatures(fox_dfm, 10) %>% as.data.frame() %>% setDT(., keep.rownames = TRUE) 
+colnames(fox_tf) <- c("word", "count")
+
+bbc_dfm <- dfm(bbc_corpus, remove = c(stopwords("english"), "weather", "later", "u2019"), remove_punct = TRUE)
+bbc_tf <- topfeatures(bbc_dfm, 10) %>% as.data.frame() %>% setDT(., keep.rownames = TRUE)
+colnames(bbc_tf) <- c("word", "count")
+
+# for all
+all_dfm <- dfm(all, groups = "channel", remove = c(stopwords("english"), "n", "m"), remove_punct = TRUE)
+all_freq <- dfm_sort(all_dfm)[,1:20] %>% as.data.frame()
+```    
+ 
+---  
+ <br />
+   
+## Analysis
+  
+<br />
+  
+### DFM Visualization  
+Now that we've developed DFM's for each news network and the collection of networks altogether, we can visualize the most frequently occurring words reported in chyrons across these four channels:
+```{r message = FALSE, warning=FALSE, fig.align='center', fig.height=10, fig.width=15}
+library(ggplot2)
+library(tidyr)
+library(ggthemes)
+
+# plot top features
+p_cnntf <- ggplot(cnn_tf, aes(word, count, fill = count)) + geom_bar(stat = "identity") + scale_fill_gradient(low = "lightblue1", high = "indianred1") + labs(title = "CNN's 10 Most Frequent Chyron Words") + theme_minimal() + theme(text = element_text(size = 20))
+print(p_cnntf)
+
+p_msnbctf <- ggplot(msnbc_tf, aes(word, count, fill = count)) + geom_bar(stat = "identity") + scale_fill_gradient(low = "lightblue1", high = "indianred1") + labs(title = "MSNBC's 10 Most Frequent Chyron Words") + theme_minimal() + theme(text = element_text(size = 20))
+print(p_msnbctf)
+
+p_foxtf <- ggplot(fox_tf, aes(word, count, fill = count)) + geom_bar(stat = "identity") + scale_fill_gradient(low = "lightblue1", high = "indianred1") + labs(title = "FOX's 10 Most Frequent Chyron Words") + theme_minimal() + theme(text = element_text(size = 20))
+print(p_foxtf)
+
+p_bbctf <- ggplot(bbc_tf, aes(word, count, fill = count)) + geom_bar(stat = "identity") + scale_fill_gradient(low = "lightblue1", high = "indianred1") + labs(title = "BBC's 10 Most Frequent Chyron Words") + theme_minimal() + theme(text = element_text(size = 20))
+print(p_bbctf)
+
+
+# plot dfm all
+a <- melt(all_freq)
+colnames(a) <- c("channel", "word", "count")
+
+ggplot(a, aes(word, count, group = channel)) + geom_point(aes(color = a$channel)) + geom_line(aes(color = a$channel)) + scale_color_discrete(name = "channel") + labs(title = "Word Count Across Channels") + theme_minimal() + theme(axis.text.x=element_text(angle=45,hjust=1), text = element_text(size = 20))
+
+```   
+Before we analyze, a few caveats about the results above: we can see that some textual inconsistencies still remain, like in chyrons that write "white house" versus those that shorten it to "wh". Therefore, we can assume that the count for white house is a lot higher than reported above. 
+The visualizations show that Trump is the most popular topic in all channels except BBC, which understandably talked a lot about Brexit. 
+  
+  <br />
+### Subsetting by Time: Compare News before and after February 14  
+What were news networks talking about before the Parkland shooting? Here's an overview, made by subsetting chyron observations before and February 14:
+```{r message = FALSE, warning=FALSE, fig.align='center', fig.height=10, fig.width=15, fig.show='hold'}
+# subset corpora per channel (before Feb 14)
+cnn_pre <- cnn[which(cnn$`date_time_(UTC)` <= as.Date("2018-02-14")), ]
+msnbc_pre <- msnbc[which(msnbc$`date_time_(UTC)` <= as.Date("2018-02-14")), ]
+fox_pre <- fox[which(fox$`date_time_(UTC)` <= as.Date("2018-02-14")), ]
+bbc_pre <- bbc[which(bbc$`date_time_(UTC)` <= as.Date("2018-02-14")), ]
+
+cnn_pre_corpus <- paste(cnn_pre$text, collapse = " ") %>% corpus()
+msnbc_pre_corpus <- paste(msnbc_pre$text, collapse = " ") %>% corpus()
+fox_pre_corpus <- paste(fox_pre$text, collapse = " ") %>% corpus()
+bbc_pre_corpus <- paste(bbc_pre$text, collapse = " ") %>% corpus()
+
+cnn_pre_dfm <- dfm(cnn_pre_corpus, remove = stopwords("english"), remove_punct = TRUE)
+msnbc_pre_dfm <- dfm(msnbc_pre_corpus, remove = c(stopwords("english"), "|"), remove_punct = TRUE)
+fox_pre_dfm <- dfm(fox_pre_corpus, remove = c(stopwords("english"), "u2014", "|", "l", "m", "{", "n", "&", "s"), remove_punct = TRUE)
+bbc_pre_dfm <- dfm(bbc_pre_corpus, remove = c(stopwords("english"), "weather", "u2019"), remove_punct = TRUE)
+
+# subset corpora per channel (after Feb 14)
+cnn_post <- cnn[which(cnn$`date_time_(UTC)` >= as.Date("2018-02-14")), ]
+msnbc_post <- msnbc[which(msnbc$`date_time_(UTC)` >= as.Date("2018-02-14")), ]
+fox_post <- fox[which(fox$`date_time_(UTC)` >= as.Date("2018-02-14")), ]
+bbc_post <- bbc[which(bbc$`date_time_(UTC)` >= as.Date("2018-02-14")), ]
+
+cnn_post_corpus <- paste(cnn_post$text, collapse = " ") %>% corpus()
+msnbc_post_corpus <- paste(msnbc_post$text, collapse = " ") %>% corpus()
+fox_post_corpus <- paste(fox_post$text, collapse = " ") %>% corpus()
+bbc_post_corpus <- paste(bbc_post$text, collapse = " ") %>% corpus()
+
+cnn_post_dfm <- dfm(cnn_post_corpus, remove = stopwords("english"), remove_punct = TRUE)
+msnbc_post_dfm <- dfm(msnbc_post_corpus, remove = c(stopwords("english"), "|"), remove_punct = TRUE)
+fox_post_dfm <- dfm(fox_post_corpus, remove = c(stopwords("english"), "u2014", "|", "l", "m", "{", "n", "&"), remove_punct = TRUE)
+bbc_post_dfm <- dfm(bbc_post_corpus, remove = c(stopwords("english"), "weather"), remove_punct = TRUE)
+
+# to view the most talked-about terms per network (before 2/14):
+# topfeatures(cnn_pre_dfm, 10)
+# topfeatures(msnbc_pre_dfm, 10)
+# topfeatures(fox_pre_dfm, 10)
+# topfeatures(bbc_pre_dfm, 10)
+
+# to view the most talked-about terms per network (after 2/14):
+# topfeatures(cnn_post_dfm, 10)
+# topfeatures(msnbc_post_dfm, 10)
+# topfeatures(fox_post_dfm, 10)
+# topfeatures(bbc_post_dfm, 10)
+
+
+# corpus comprised of all channels (before 2/14)
+all_pre <- c(paste(cnn_pre$text, collapse = " "), paste(msnbc_pre$text, collapse = " "), paste(fox_pre$text, collapse = " "), paste(bbc_pre$text, collapse = " ")) %>% corpus()
+docnames(all_pre) <- c("CNN", "MSNBC", "FOX", "BBC")
+docvars(all_pre, "channel") <- c("CNN", "MSNBC", "FOX", "BBC")
+
+all_predfm <- dfm(all_pre, remove = c(stopwords("english"), "|", "&", "later"), remove_punct = TRUE)
+docnames(all_predfm) <- c("CNN", "MSNBC", "FOX", "BBC")
+
+all_prefreq <- dfm_sort(all_predfm)[,1:20] %>% as.data.frame()
+
+# corpus comprised of all channels (after 2/14)
+all_post <- c(paste(cnn_post$text, collapse = " "), paste(msnbc_post$text, collapse = " "), paste(fox_post$text, collapse = " "), paste(bbc_post$text, collapse = " ")) %>% corpus()
+docnames(all_post) <- c("CNN", "MSNBC", "FOX", "BBC")
+docvars(all_post, "channel") <- c("CNN", "MSNBC", "FOX", "BBC")
+
+all_postdfm <- dfm(all_post, remove = c(stopwords("english"), "|", "&", "later"), remove_punct = TRUE)
+docnames(all_postdfm) <- c("CNN", "MSNBC", "FOX", "BBC")
+
+all_postfreq <- dfm_sort(all_postdfm)[,1:20] %>% as.data.frame()
+
+
+# plot news stories before Feb 14
+par(mfrow = c(1,2))
+a <- melt(all_prefreq)
+colnames(a) <- c("channel", "word", "count")
+
+ggplot(a, aes(word, count, group = channel)) + geom_point(aes(color = a$channel)) + geom_line(aes(color = a$channel)) + scale_color_discrete(name = "channel") + labs(title = "Word Count Across Channels: January 27 - February 13, 2018") + theme_minimal() + theme(axis.text.x=element_text(angle=45,hjust=1), text = element_text(size = 20))
+
+# plot news stories after Feb 14
+b <- melt(all_postfreq)
+colnames(b) <- c("channel", "word", "count")
+
+ggplot(b, aes(word, count, group = channel)) + geom_point(aes(color = b$channel)) + geom_line(aes(color = b$channel)) + scale_color_discrete(name = "channel") + labs(title = "Word Count Across Channels: February 14 - March 1, 2018") + theme_minimal() + theme(axis.text.x=element_text(angle=45,hjust=1), text = element_text(size = 20))
+```    
+  <br />
+  
+### Working with Dictionaries: Who Talks about What?   
+Quanteda's  `dictionary()` function allows us to measure the frequency of a word or set of words in a corpus. This is really helpful for exploring how frequently certain topics are reported in the news. Let's start with a simple example: coverage of international news. We can find out how frequently certain countries are talked about in the news and, when subsetting by channel, we can determine who drove most of the conversation around these countries:
+```{r message = FALSE, warning=FALSE, fig.align='center', fig.height=10, fig.width=15}
+dict <- dictionary(list(russia = c("russia", "russian", "putin"), china = c("china", "chinese", "jinping"), mexico = c("mexico", "mexican", "nieto"), syria = c("syria", "syrian", "assad")))
+a <- dfm(all, dictionary = dict) %>% as.data.frame()
+a <- melt(a)
+colnames(a) <- c("channel", "word", "count")
+
+ggplot(a, aes(word, count, group = channel)) + geom_point(aes(color = a$channel)) + geom_line(aes(color = a$channel)) + scale_color_discrete(name = "channel") + labs(title = "Word Count: International News") + theme_minimal() + theme(text = element_text(size = 20))
+```    
+  <br />
+    
+### Working with Dictionaries: Parkland Shooting    
+The Parkland Shooting was the tragedy that dominated news headlines around the time that it happened. Though all networks reported the same shooting, some networks chose to focus on certain aspects of the shooting more than others. We can use `dictionary()` to look for certain words and see which networks used those words most frequently. Some questions we can ask:  
+<br />
+**Of all those involved in the Parkland Shooting, who was talked about most frequently?**  
+```{r message = FALSE, warning=FALSE, fig.align='center', fig.height=10, fig.width=15}
+dict <- dictionary(list(gunman = c("gunman", "nikolas", "cruz"), superintendent = "superintendent", teachers = c("teacher", "teachers"), students = c("student", "students"), law_enforcement = c("police", "swat", "sheriff"), nra = "nra"))
+a <- dfm(all_post, dictionary = dict) %>% as.data.frame()
+a <- melt(a)
+colnames(a) <- c("channel", "word", "count")
+
+ggplot(a, aes(word, count, group = channel)) + geom_point(aes(color = a$channel)) + geom_line(aes(color = a$channel)) + scale_color_discrete(name = "channel") + labs(title = "Word Count: Involvement in Parkland Shooting") + theme_minimal() + theme(text = element_text(size = 20))
+```  
+  <br />
+**What language do networks use to describe the violence of the Parkland Shooting?**  
+```{r message = FALSE, warning=FALSE, fig.align='center', fig.height=10, fig.width=15}
+dict <- dictionary(list(killed = "killed", dead = "dead", murdered = c("murder", "murdered")))
+a <- dfm(all_post, dictionary = dict) %>% as.data.frame()
+a <- melt(a)
+colnames(a) <- c("channel", "word", "count")
+
+ggplot(a, aes(word, count, group = channel)) + geom_point(aes(color = a$channel)) + geom_line(aes(color = a$channel)) + scale_color_discrete(name = "channel") + theme_minimal() + labs(title = "Word Count: Characterizing Violence") +  theme(text = element_text(size = 20))
+```
+  <br />
+
+
+### Visualizing Headlines over Time  
+We can use the time information from our chyron dataset to visualize headlines in another way. Instead of subsetting by time, we can subset by certain words using the `dictionary()` function and plot word frequencies across time. This allows us to visualize news cycles and see how coverage of a certain event changes over time, or how a story might evolve over time.  
+First, we need to add new columns to our channel datasets that will allow us to measure time by entire days:  
+```{r message = FALSE, warning=FALSE}
+cnn <- cnn %>% mutate(days = cnn$`date_time_(UTC)`)
+cnn$days <- format(cnn$days, "%m-%d")
+msnbc <- msnbc %>% mutate(days = msnbc$`date_time_(UTC)`)
+msnbc$days <- format(msnbc$days, "%m-%d")
+fox <- fox %>% mutate(days = fox$`date_time_(UTC)`)
+fox$days <- format(fox$days, "%m-%d")
+bbc <- bbc %>% mutate(days = bbc$`date_time_(UTC)`)
+bbc$days <- format(bbc$days, "%m-%d")
+
+dates <- unique(cnn$days)
+
+corpora_cnn <- list()
+for(i in dates){
+  a <- cnn[which(cnn$days == i), ]
+  corpora_cnn[i] <- paste(a$text, collapse = " ")
+}
+corpora_msnbc <- list()
+for(i in dates){
+  a <- msnbc[which(msnbc$days == i), ]
+  corpora_msnbc[i] <- paste(a$text, collapse = " ")
+}
+corpora_fox <- list()
+for(i in dates){
+  a <- fox[which(fox$days == i), ]
+  corpora_fox[i] <- paste(a$text, collapse = " ")
+}
+corpora_bbc <- list()
+for(i in dates){
+  a <- bbc[which(bbc$days == i), ]
+  corpora_bbc[i] <- paste(a$text, collapse = " ")
+}
+
+channels <- c(rep("CNN", length(dates)), rep("MSNBC", length(dates)), rep("FOX", length(dates)), rep("BBC", length(dates)))
+corpora <- c(corpora_cnn, corpora_msnbc, corpora_fox, corpora_bbc)
+```  
+  
+  <br />
+With the new `days` column, we can plot this feature along the x-axis and measure the frequency of certain words along the y-axis.  
+Let's continue the Parkland Shooting coverage analysis in this way.  
+**When did networks start talking about the Parkland Shooting?**  
+```{r message = FALSE, warning=FALSE, fig.align='center', fig.height=10, fig.width=15}
+# florida
+word_count <- data.frame()
+for(i in 1:length(corpora)){
+  current_dfm <- dfm(corpora[[i]], dictionary = dictionary(list(parkland = c("florida", "shooting"))))
+  added <- as.data.frame(current_dfm)
+  word_count <- rbind(word_count, added)
+}
+
+word_count$channel <- channels
+word_count$dates <- rep(dates, 4)
+
+ggplot(word_count, aes(dates, parkland, group = channel)) + geom_point(aes(color = word_count$channel)) + geom_line(aes(color = word_count$channel)) + scale_color_discrete(name = "channel") + labs(title = "Word Count: Parkland Shooting", x = "date", y = "count") + theme_minimal() + theme(axis.text.x=element_text(angle=45,hjust=1), text = element_text(size = 20))
+```  
+  <br />
+**The Parkland Shooting led to a fierce debate along all ideological sides about current gun policy in the U.S. How soon did networks start talking about the debate that ensued?**    
+```{r message = FALSE, warning=FALSE, fig.align='center', fig.height=10, fig.width=15}
+# debate
+word_count <- data.frame()
+for(i in 1:length(corpora)){
+  current_dfm <- dfm(corpora[[i]], dictionary = dictionary(list(debate = c("debate", "policy"))))
+  added <- as.data.frame(current_dfm)
+  word_count <- rbind(word_count, added)
+}
+
+word_count$channel <- channels
+word_count$dates <- rep(dates, 4)
+
+ggplot(word_count, aes(dates, debate, group = channel)) + geom_point(aes(color = word_count$channel)) + geom_line(aes(color = word_count$channel)) + scale_color_discrete(name = "channel") + labs(title = "Word Count: Gun Policy Debate", x = "date", y = "count") + theme_minimal() + theme(axis.text.x=element_text(angle=45,hjust=1), text = element_text(size = 20))
+```   
+  <br />
+**Trump was the most frequently appearing word in the chyrons from CNN, MSNBC, and Fox. What does the news cycle look like of someone who never really leaves the news?**    
+```{r message = FALSE, warning=FALSE, fig.align='center', fig.height=10, fig.width=15}
+# trump
+word_count <- data.frame()
+for(i in 1:length(corpora)){
+  current_dfm <- dfm(corpora[[i]], dictionary = dictionary(list(trump = "trump")))
+  added <- as.data.frame(current_dfm)
+  word_count <- rbind(word_count, added)
+}
+
+word_count$channel <- channels
+word_count$dates <- rep(dates, 4)
+
+ggplot(word_count, aes(dates, trump, group = channel)) + geom_point(aes(color = word_count$channel)) + geom_line(aes(color = word_count$channel)) + scale_color_discrete(name = "channel") + labs(title = "Word Count: trump", x = "date", y = "count") + theme_minimal() + theme(axis.text.x=element_text(angle=45,hjust=1), text = element_text(size = 20))
+```    
+   <br />
+**News about Russian interference and immigration policy were popular topics before the Parkland Shooting. How did coverage of these topics change after the tragedy?**  
+```{r message = FALSE, warning=FALSE, fig.align='center', fig.height=10, fig.width=15}
+# russia
+word_count <- data.frame()
+for(i in 1:length(corpora)){
+  current_dfm <- dfm(corpora[[i]], dictionary = dictionary(list(russia = c("russia", "russian", "dossier", "memo", "nunes"))))
+  added <- as.data.frame(current_dfm)
+  word_count <- rbind(word_count, added)
+}
+
+word_count$channel <- channels
+word_count$dates <- rep(dates, 4)
+
+ggplot(word_count, aes(dates, russia, group = channel)) + geom_point(aes(color = word_count$channel)) + geom_line(aes(color = word_count$channel)) + scale_color_discrete(name = "channel") + labs(title = "Word Count: Russian Interference", x = "date", y = "count") + theme_minimal() + theme(axis.text.x=element_text(angle=45,hjust=1), text = element_text(size = 20))
+
+
+# immigration
+word_count <- data.frame()
+for(i in 1:length(corpora)){
+  current_dfm <- dfm(corpora[[i]], dictionary = dictionary(list(immigration = "immigration")))
+  added <- as.data.frame(current_dfm)
+  word_count <- rbind(word_count, added)
+}
+
+word_count$channel <- channels
+word_count$dates <- rep(dates, 4)
+
+ggplot(word_count, aes(dates, immigration, group = channel)) + geom_point(aes(color = word_count$channel)) + geom_line(aes(color = word_count$channel)) + scale_color_discrete(name = "channel") + labs(title = "Word Count: Immigration", x = "date", y = "count") + theme_minimal() + theme(axis.text.x=element_text(angle=45,hjust=1), text = element_text(size = 20)) 
+```  
+
+---  
+<br />
+  
+## Final Thoughts  
+Analysis through word count offers a lot of potential for interesting analysis, though it also comes with its fair share of shortcomings. One thing notably missing from this analysis is acknowledgement of context; this analysis can't tell us, for example, how different networks might use the same word differently. When one network uses the word "debate," are they referring to the gun control debate or to another controversial topic? Context and word meaning haven't been implimented in this analysis.  
+Another important thing to mention about word count analysis is its dependence on data consistency. Inconsistent capture of chyron text inevitably affected some of the numbers reported above. Some chyrons had the same headline repeat twice in the same observation, for example, which artificially inflated a particular term's count. The opposite could also happen, in which chyron text gets misspelled or misreported or missed altogether, which artificially deflates word count.  
+Despite the limitations of analysis, I think it provides a useful framework for thinking about the news. Imperfect analysis can still give us a general idea about  the similarities and differences between network content and reporting. Given the relentless schedule at which news is reported and consumed, there's a lot more to explore about our relationship to news stories and the networks that deliver them.
