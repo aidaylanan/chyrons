@@ -1,9 +1,9 @@
----
+ 
 title: 'STATS 199: Chyron Text Analysis'
 author: "Aida Ylanan"
 date: "3/16/2018"
 output: html_document
----
+ 
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -20,7 +20,7 @@ Notes:
 * *This analysis takes a lot of inspiration from a report written by [The Pudding](https://pudding.cool/2018/01/chyrons/) that compares the different ways CNN, MSNBC and Fox cover the news.*  
 * *A caveat before we begin: this objective of this analysis has no particular ideological point to make. This analysis, imperfect as it is, is only meant to explore how statistical techniques can be used to see the news differently than we would, say, only watching it.*  
   
----    
+ 
   <br />
   <br />
     
@@ -49,7 +49,8 @@ chy[38225:38226, 5]
 ```  
 It quickly becomes clear that a big challenge of this project comes from cleaning up the text itself. 
   
-  
+  <br />
+  <br />
   
 ### Data Preparation 
 <br />
@@ -233,7 +234,7 @@ all_dfm <- dfm(all, groups = "channel", remove = c(stopwords("english"), "n", "m
 all_freq <- dfm_sort(all_dfm)[,1:20] %>% as.data.frame()
 ```    
  
----  
+   
  <br />
    
 ## Analysis
@@ -514,7 +515,7 @@ word_count$dates <- rep(dates, 4)
 ggplot(word_count, aes(dates, immigration, group = channel)) + geom_point(aes(color = word_count$channel)) + geom_line(aes(color = word_count$channel)) + scale_color_discrete(name = "channel") + labs(title = "Word Count: Immigration", x = "date", y = "count") + theme_minimal() + theme(axis.text.x=element_text(angle=45,hjust=1), text = element_text(size = 20)) 
 ```  
 
----  
+   
 <br />
   
 ## Final Thoughts  
