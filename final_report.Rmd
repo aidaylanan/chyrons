@@ -2,7 +2,7 @@
 title: 'STATS 199: Chyron Text Analysis'
 author: "Aida Ylanan"
 date: "3/16/2018"
-output: html_document
+output: github_document
  
 
 ```{r setup, include=FALSE}
@@ -273,6 +273,7 @@ Before we analyze, a few caveats about the results above: we can see that some t
 The visualizations show that Trump is the most popular topic in all channels except BBC, which understandably talked a lot about Brexit. 
   
   <br />
+    
 ### Subsetting by Time: Compare News before and after February 14  
 What were news networks talking about before the Parkland shooting? Here's an overview, made by subsetting chyron observations before and February 14:
 ```{r message = FALSE, warning=FALSE, fig.align='center', fig.height=10, fig.width=15, fig.show='hold'}
